@@ -1,0 +1,113 @@
+---
+title: "Activity Class Prediction--Project assignment of Practical Machine Learning"
+author: "pickacarrot"
+date: "April 24, 2015"
+output: html_document
+---
+# Loading data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The testing data can be downloaded here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+After dowaloading data sources, read the training data and testing data into "train" and "test" respectively:
+```{r}
+train <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+```
+
+# Initial environment
+In order to finish this project, we weed several packages:
+```{r}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(rattle)
+```
+Additionally, for the purpose of reproduceablity, we set a seed:
+```{r}
+set.seed(8787)
+```
+
+# Preprocessing data
+•Remove the index and usernames
+
+Obviously, index and usernames are not predictors for activity class. So we remove the first two columns of train dataset:
+```{r}
+training <- train[,-c(1,2)]
+```
+
+•Remove columns with too many NAs
+
+If one column has more than 50% missing values, we believe that it is not a good predictor and remove it.
+```{r}
+training1<- training 
+for(i in 1:length(training)) { 
+        if( sum( is.na( training[, i] ) ) /nrow(training) >= .5 ) { 
+        for(j in 1:length(training1)) {
+            if( length( grep(names(training[i]), names(training1)[j]) ) ==1)  { 
+                training1 <- training1[ , -j] 
+            }   
+        } 
+    }
+}
+```
+
+•Remove columns with near zero variance
+
+If a certain variable has variance close to zero, it has little impact on prediction results and can be removed for a cleaner dataset.
+```{r}
+nzv <- nearZeroVar(training1)
+training2 <- training1[,-nzv]
+```
+
+# Using decision tree for prediction
+Applying the rpart function to the clean dataset "training2", we can get a decision tree for predicting activity class.
+```{r}
+tree <- rpart(classe ~ ., data=training2, method="class")
+fancyRpartPlot(tree)
+```
+
+# Using K-fold cross validation to evaluate the decision tree model
+Before using the decision tree to predict the testing dataset, we want to estimate how accurate the model could be. In order to evaluate it, we can randomly split the clean training data into 10 groups. In the first round, we take the first group out to be testing group, then generate the model from the remaining 9 groups. Apply the model to the first group and get the misclassification error. Repeat this step to the other groups. This is 10-fold cross validation.
+
+```{r}
+n=dim(training2)[1]
+k=10
+kfold_index=sample(1:k,n,replace=TRUE)
+kfold_test_error=rep(0,k)
+
+for(i in 1:k){
+kfold_train=training2[kfold_index!=i,]
+kfold_test=training2[kfold_index==i,]
+modFit <- rpart(classe ~ ., data=kfold_train, method="class")
+prediction <- predict(modFit, kfold_test, type="class")
+kfold_test_error[i] = 1-(sum(prediction==kfold_test[,57]))/nrow(kfold_test)
+}
+kfold_test_error
+```
+Average the 10 misclassification errors and this is also the estmatied out of sampel error we have.
+```{r}
+aver_error = mean(kfold_test_error)
+aver_error
+```
+
+# Predict activity class of the testing dataset
+```{r}
+dim(test)
+```
+We have 20 observations in testing dataset. According to our estimated out of sample error `aver_error`, it would be 18 to 19 accuratly predicted results.
+
+We apply the model testing dataset:
+```{r}
+colnames <- names(training2)
+testing <- test[,names(test)%in%colnames] 
+answers <- predict(modFit, testing, type="class")
+answers
+```
+
+We submit the predictions to the programming assignment and get 18/20 accuracy.
+
+
